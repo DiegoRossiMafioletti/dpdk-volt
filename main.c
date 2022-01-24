@@ -42,8 +42,8 @@
 
 static volatile bool force_quit;
 
-/* MAC updating enabled by default */
-static int mac_updating = 1;
+/* MAC updating disabled by default */
+static int mac_updating = 0;
 
 /* Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
@@ -94,13 +94,17 @@ struct lcore_queue_conf lcore_queue_conf[RTE_MAX_LCORE];
 
 static struct rte_eth_dev_tx_buffer *tx_buffer[RTE_MAX_ETHPORTS];
 
+/* enable jumbo frames */
 static struct rte_eth_conf port_conf = {
-	.rxmode = {
-		.split_hdr_size = 0,
-	},
-	.txmode = {
-		.mq_mode = RTE_ETH_MQ_TX_NONE,
-	},
+    .rxmode = {
+        .max_rx_pkt_len = MAX_JUMBO_PKT_LEN,
+        .split_hdr_size = 0,
+        .offloads = DEV_RX_OFFLOAD_JUMBO_FRAME,
+    },
+    .txmode = {
+        .mq_mode = ETH_MQ_TX_NONE,
+        .offloads = DEV_TX_OFFLOAD_MULTI_SEGS,
+    },
 };
 
 struct rte_mempool * l2fwd_pktmbuf_pool = NULL;
