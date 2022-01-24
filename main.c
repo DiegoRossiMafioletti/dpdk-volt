@@ -54,6 +54,11 @@ static int promiscuous_on;
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
 
+/* Jumbo frames */
+#define PKT_MBUF_DATA_SIZE (RTE_ETHER_MAX_JUMBO_FRAME_LEN + RTE_PKTMBUF_HEADROOM)
+#define MAX_JUMBO_PKT_LEN  9216
+
+
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -182,7 +187,7 @@ l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 	*((uint64_t *)tmp) = 0x000000000002 + ((uint64_t)dest_portid << 40);
 
 	/* src addr */
-	rte_ether_addr_copy(&l2fwd_ports_eth_addr[dest_portid], &eth->src_addr);
+	rte_ether_addr_copy(&l2fwd_ports_eth_addr[dest_portid], &eth->s_addr);
 }
 
 /* Simple forward. 8< */
@@ -619,7 +624,7 @@ check_all_ports_link_status(uint32_t port_mask)
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
-			if (link.link_status == RTE_ETH_LINK_DOWN) {
+			if (link.link_status == ETH_LINK_DOWN) {
 				all_ports_up = 0;
 				break;
 			}
@@ -805,7 +810,7 @@ main(int argc, char **argv)
 				"Error during getting device (port %u) info: %s\n",
 				portid, strerror(-ret));
 
-		if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
+		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf.txmode.offloads |=
 				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 		/* Configure the number of queues for a port. */
@@ -893,9 +898,14 @@ main(int argc, char **argv)
 					rte_strerror(-ret), portid);
 		}
 
-		printf("Port %u, MAC address: " RTE_ETHER_ADDR_PRT_FMT "\n\n",
-			portid,
-			RTE_ETHER_ADDR_BYTES(&l2fwd_ports_eth_addr[portid]));
+		printf("Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n\n",
+				portid,
+				l2fwd_ports_eth_addr[portid].addr_bytes[0],
+				l2fwd_ports_eth_addr[portid].addr_bytes[1],
+				l2fwd_ports_eth_addr[portid].addr_bytes[2],
+				l2fwd_ports_eth_addr[portid].addr_bytes[3],
+				l2fwd_ports_eth_addr[portid].addr_bytes[4],
+				l2fwd_ports_eth_addr[portid].addr_bytes[5]);
 
 		/* initialize port stats */
 		memset(&port_statistics, 0, sizeof(port_statistics));
