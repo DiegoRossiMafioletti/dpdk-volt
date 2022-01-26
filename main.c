@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/queue.h>
+#include <netinet/in.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -24,6 +25,7 @@
 #include <rte_memcpy.h>
 #include <rte_eal.h>
 #include <rte_launch.h>
+#include <rte_atomic.h>
 #include <rte_cycles.h>
 #include <rte_prefetch.h>
 #include <rte_lcore.h>
@@ -45,9 +47,6 @@ static volatile bool force_quit;
 /* MAC updating disabled by default */
 static int mac_updating = 0;
 
-/* Ports set in promiscuous mode off by default. */
-static int promiscuous_on;
-
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
 #define MAX_PKT_BURST 32
@@ -57,7 +56,6 @@ static int promiscuous_on;
 /* Jumbo frames */
 #define PKT_MBUF_DATA_SIZE (RTE_ETHER_MAX_JUMBO_FRAME_LEN + RTE_PKTMBUF_HEADROOM)
 #define MAX_JUMBO_PKT_LEN  9216
-
 
 /*
  * Configurable number of RX/TX ring descriptors
@@ -89,13 +87,11 @@ static unsigned int l2fwd_rx_queue_per_lcore = 1;
 
 #define MAX_RX_QUEUE_PER_LCORE 16
 #define MAX_TX_QUEUE_PER_PORT 16
-/* List of queues to be polled for a given lcore. 8< */
 struct lcore_queue_conf {
 	unsigned n_rx_port;
 	unsigned rx_port_list[MAX_RX_QUEUE_PER_LCORE];
 } __rte_cache_aligned;
 struct lcore_queue_conf lcore_queue_conf[RTE_MAX_LCORE];
-/* >8 End of list of queues to be polled for a given lcore. */
 
 static struct rte_eth_dev_tx_buffer *tx_buffer[RTE_MAX_ETHPORTS];
 
@@ -190,7 +186,6 @@ l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 	rte_ether_addr_copy(&l2fwd_ports_eth_addr[dest_portid], &eth->s_addr);
 }
 
-/* Simple forward. 8< */
 static void
 l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 {
@@ -208,7 +203,6 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 	if (sent)
 		port_statistics[dst_port].tx += sent;
 }
-/* >8 End of simple forward. */
 
 /* main processing loop */
 static void
@@ -248,7 +242,6 @@ l2fwd_main_loop(void)
 
 	while (!force_quit) {
 
-		/* Drains TX queue in its main loop. 8< */
 		cur_tsc = rte_rdtsc();
 
 		/*
@@ -288,9 +281,10 @@ l2fwd_main_loop(void)
 
 			prev_tsc = cur_tsc;
 		}
-		/* >8 End of draining TX queue. */
 
-		/* Read packet from RX queues. 8< */
+		/*
+		 * Read packet from RX queues
+		 */
 		for (i = 0; i < qconf->n_rx_port; i++) {
 
 			portid = qconf->rx_port_list[i];
@@ -305,7 +299,6 @@ l2fwd_main_loop(void)
 				l2fwd_simple_forward(m, portid);
 			}
 		}
-		/* >8 End of read packet from RX queues. */
 	}
 }
 
@@ -320,12 +313,11 @@ l2fwd_launch_one_lcore(__rte_unused void *dummy)
 static void
 l2fwd_usage(const char *prgname)
 {
-	printf("%s [EAL options] -- -p PORTMASK [-P] [-q NQ]\n"
+	printf("%s [EAL options] -- -p PORTMASK [-q NQ]\n"
 	       "  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
-	       "  -P : Enable promiscuous mode\n"
 	       "  -q NQ: number of queue (=ports) per lcore (default is 1)\n"
 	       "  -T PERIOD: statistics will be refreshed each PERIOD seconds (0 to disable, 10 default, 86400 maximum)\n"
-	       "  --no-mac-updating: Disable MAC addresses updating (enabled by default)\n"
+	       "  --[no-]mac-updating: Enable or disable MAC addresses updating (enabled by default)\n"
 	       "      When enabled:\n"
 	       "       - The source MAC address is replaced by the TX port MAC address\n"
 	       "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
@@ -439,11 +431,11 @@ l2fwd_parse_timer_period(const char *q_arg)
 
 static const char short_options[] =
 	"p:"  /* portmask */
-	"P"   /* promiscuous */
 	"q:"  /* number of queues */
 	"T:"  /* timer period */
 	;
 
+#define CMD_LINE_OPT_MAC_UPDATING "mac-updating"
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
 #define CMD_LINE_OPT_PORTMAP_CONFIG "portmap"
 
@@ -452,13 +444,13 @@ enum {
 
 	/* first long only option value must be >= 256, so that we won't
 	 * conflict with short options */
-	CMD_LINE_OPT_NO_MAC_UPDATING_NUM = 256,
+	CMD_LINE_OPT_MIN_NUM = 256,
 	CMD_LINE_OPT_PORTMAP_NUM,
 };
 
 static const struct option lgopts[] = {
-	{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, 0,
-		CMD_LINE_OPT_NO_MAC_UPDATING_NUM},
+	{ CMD_LINE_OPT_MAC_UPDATING, no_argument, &mac_updating, 1},
+	{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, &mac_updating, 0},
 	{ CMD_LINE_OPT_PORTMAP_CONFIG, 1, 0, CMD_LINE_OPT_PORTMAP_NUM},
 	{NULL, 0, 0, 0}
 };
@@ -487,9 +479,6 @@ l2fwd_parse_args(int argc, char **argv)
 				l2fwd_usage(prgname);
 				return -1;
 			}
-			break;
-		case 'P':
-			promiscuous_on = 1;
 			break;
 
 		/* nqueue */
@@ -521,10 +510,6 @@ l2fwd_parse_args(int argc, char **argv)
 				l2fwd_usage(prgname);
 				return -1;
 			}
-			break;
-
-		case CMD_LINE_OPT_NO_MAC_UPDATING_NUM:
-			mac_updating = 0;
 			break;
 
 		default:
@@ -670,7 +655,7 @@ main(int argc, char **argv)
 	unsigned int nb_lcores = 0;
 	unsigned int nb_mbufs;
 
-	/* Init EAL. 8< */
+	/* init EAL */
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid EAL arguments\n");
@@ -685,7 +670,6 @@ main(int argc, char **argv)
 	ret = l2fwd_parse_args(argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid L2FWD arguments\n");
-	/* >8 End of init EAL. */
 
 	printf("MAC updating %s\n", mac_updating ? "enabled" : "disabled");
 
@@ -705,8 +689,6 @@ main(int argc, char **argv)
 	if (l2fwd_enabled_port_mask & ~((1 << nb_ports) - 1))
 		rte_exit(EXIT_FAILURE, "Invalid portmask; possible (0x%x)\n",
 			(1 << nb_ports) - 1);
-
-	/* Initialization of the driver. 8< */
 
 	/* reset l2fwd_dst_ports */
 	for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++)
@@ -743,7 +725,6 @@ main(int argc, char **argv)
 			l2fwd_dst_ports[last_port] = last_port;
 		}
 	}
-	/* >8 End of initialization of the driver. */
 
 	rx_lcore_id = 0;
 	qconf = NULL;
@@ -778,13 +759,12 @@ main(int argc, char **argv)
 	nb_mbufs = RTE_MAX(nb_ports * (nb_rxd + nb_txd + MAX_PKT_BURST +
 		nb_lcores * MEMPOOL_CACHE_SIZE), 8192U);
 
-	/* Create the mbuf pool. 8< */
+	/* create the mbuf pool */
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
 		MEMPOOL_CACHE_SIZE, 0, MAX_JUMBO_PKT_LEN,
 		rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
-	/* >8 End of create the mbuf pool. */
 
 	/* Initialise each port */
 	RTE_ETH_FOREACH_DEV(portid) {
@@ -811,13 +791,12 @@ main(int argc, char **argv)
 				portid, strerror(-ret));
 
 		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
-			local_port_conf.txmode.offloads |= DEV_TX_OFFLOAD_MBUF_FAST_FREE;
-		/* Configure the number of queues for a port. */
+			local_port_conf.txmode.offloads |=
+				DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 		ret = rte_eth_dev_configure(portid, 1, 1, &local_port_conf);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%u\n",
 				  ret, portid);
-		/* >8 End of configuration of the number of queues for a port. */
 
 		ret = rte_eth_dev_adjust_nb_rx_tx_desc(portid, &nb_rxd,
 						       &nb_txd);
@@ -837,7 +816,6 @@ main(int argc, char **argv)
 		fflush(stdout);
 		rxq_conf = dev_info.default_rxconf;
 		rxq_conf.offloads = local_port_conf.rxmode.offloads;
-		/* RX queue setup. 8< */
 		ret = rte_eth_rx_queue_setup(portid, 0, nb_rxd,
 					     rte_eth_dev_socket_id(portid),
 					     &rxq_conf,
@@ -845,9 +823,8 @@ main(int argc, char **argv)
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d, port=%u\n",
 				  ret, portid);
-		/* >8 End of RX queue setup. */
 
-		/* Init one TX queue on each port. 8< */
+		/* init one TX queue on each port */
 		fflush(stdout);
 		txq_conf = dev_info.default_txconf;
 		txq_conf.offloads = local_port_conf.txmode.offloads;
@@ -857,7 +834,6 @@ main(int argc, char **argv)
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup:err=%d, port=%u\n",
 				ret, portid);
-		/* >8 End of init one TX queue on each port. */
 
 		/* Initialize TX buffers */
 		tx_buffer[portid] = rte_zmalloc_socket("tx_buffer",
@@ -889,13 +865,12 @@ main(int argc, char **argv)
 				  ret, portid);
 
 		printf("done: \n");
-		if (promiscuous_on) {
-			ret = rte_eth_promiscuous_enable(portid);
-			if (ret != 0)
-				rte_exit(EXIT_FAILURE,
-					"rte_eth_promiscuous_enable:err=%s, port=%u\n",
-					rte_strerror(-ret), portid);
-		}
+
+		ret = rte_eth_promiscuous_enable(portid);
+		if (ret != 0)
+			rte_exit(EXIT_FAILURE,
+				 "rte_eth_promiscuous_enable:err=%s, port=%u\n",
+				 rte_strerror(-ret), portid);
 
 		printf("Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n\n",
 				portid,
@@ -938,9 +913,6 @@ main(int argc, char **argv)
 		rte_eth_dev_close(portid);
 		printf(" Done\n");
 	}
-
-	/* clean up the EAL */
-	rte_eal_cleanup();
 	printf("Bye...\n");
 
 	return ret;
