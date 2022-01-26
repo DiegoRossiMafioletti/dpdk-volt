@@ -780,7 +780,7 @@ main(int argc, char **argv)
 
 	/* Create the mbuf pool. 8< */
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
-		MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+		MEMPOOL_CACHE_SIZE, 0, MAX_JUMBO_PKT_LEN,
 		rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
