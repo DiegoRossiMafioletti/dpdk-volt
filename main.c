@@ -441,7 +441,7 @@ static const char short_options[] =
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
 #define CMD_LINE_OPT_PORTMAP_CONFIG "portmap"
 
-static uint8_t CMD_LINE_OPT_ENABLE_JUMBO_FRAMES 0;
+static uint8_t CMD_LINE_OPT_ENABLE_JUMBO_FRAMES = 0;
 
 enum {
 	/* long options mapped to a short option */
