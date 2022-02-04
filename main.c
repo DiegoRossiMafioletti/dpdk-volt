@@ -49,7 +49,7 @@ static int mac_updating = 0;
 
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
-#define MAX_PKT_BURST 32
+#define MAX_PKT_BURST 1
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
 
@@ -110,10 +110,15 @@ static struct rte_eth_conf port_conf = {
 
 struct rte_mempool * l2fwd_pktmbuf_pool = NULL;
 
+/* global pon_packet structure */
+pon_packet_t pon_packet;
+
 /* Per-port statistics struct */
 struct l2fwd_port_statistics {
 	uint64_t tx;
 	uint64_t rx;
+	uint64_t dbru;
+	uint64_t bwmap;
 	uint64_t dropped;
 } __rte_cache_aligned;
 struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
@@ -122,16 +127,20 @@ struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 /* A tsc-based timer responsible for triggering statistics printout */
 static uint64_t timer_period = 10; /* default period is 10 seconds */
 
+#define BWMAP_COUNT 9
+
 /* Print out statistics on packets dropped */
 static void
 print_stats(void)
 {
-	uint64_t total_packets_dropped, total_packets_tx, total_packets_rx;
+	uint64_t total_packets_dropped, total_packets_tx, total_packets_rx, total_dbru, total_bwmap;
 	unsigned portid;
 
 	total_packets_dropped = 0;
 	total_packets_tx = 0;
 	total_packets_rx = 0;
+	total_dbru = 0;
+	total_bwmap = 0;
 
 	const char clr[] = { 27, '[', '2', 'J', '\0' };
 	const char topLeft[] = { 27, '[', '1', ';', '1', 'H','\0' };
@@ -147,23 +156,33 @@ print_stats(void)
 			continue;
 		printf("\nStatistics for port %u ------------------------------"
 			   "\nPackets sent: %24"PRIu64
-			   "\nPackets received: %20"PRIu64
+			   "\nPackets received: %22"PRIu64
+			   "\nDBRUs: %28"PRIu64
+			   "\nBWMAPs: %28"PRIu64
 			   "\nPackets dropped: %21"PRIu64,
 			   portid,
 			   port_statistics[portid].tx,
 			   port_statistics[portid].rx,
+			   port_statistics[portid].dbru,
+			   port_statistics[portid].bwmap,
 			   port_statistics[portid].dropped);
 
 		total_packets_dropped += port_statistics[portid].dropped;
 		total_packets_tx += port_statistics[portid].tx;
 		total_packets_rx += port_statistics[portid].rx;
+		total_dbru += port_statistics[portid].dbru;
+		total_bwmap += port_statistics[portid].bwmap;
 	}
 	printf("\nAggregate statistics ==============================="
 		   "\nTotal packets sent: %18"PRIu64
 		   "\nTotal packets received: %14"PRIu64
+		   "\nTotal DBRUs: %22"PRIu64
+		   "\nTotal BWMAPs: %22"PRIu64
 		   "\nTotal packets dropped: %15"PRIu64,
 		   total_packets_tx,
 		   total_packets_rx,
+		   total_dbru,
+		   total_bwmap,
 		   total_packets_dropped);
 	printf("\n====================================================\n");
 
@@ -186,17 +205,122 @@ l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 	rte_ether_addr_copy(&l2fwd_ports_eth_addr[dest_portid], &eth->s_addr);
 }
 
+
+static __inline__ dbru_t *
+l2fwd_dbru_pointer(struct rte_mbuf *m) 
+{
+	dbru_t *dbru;
+	char *p;
+
+	p = rte_pktmbuf_mtod(m, char *);
+	p += sizeof(struct rte_ether_hdr);
+	p += sizeof(struct rte_pon_us_ether_hdr);
+	// RTE_PTR_ALIGN_CEIL(p, sizeof(uint64_t));
+
+	dbru = (dbru_t *)p;
+	return dbru;
+}
+
+
+static __inline__ hlend_t *
+l2fwd_hlend_pointer(struct rte_mbuf *m) 
+{
+	hlend_t *hlend;
+	char *p;
+
+	/* starting the pointer after the upstream header + TS */
+	p = rte_pktmbuf_mtod(m, char *);
+	p += sizeof(struct rte_ether_hdr);
+	p += sizeof(struct rte_pon_us_ether_hdr);
+	p += sizeof(struct rte_pon_dbru_hdr);
+	p += sizeof(struct rte_pon_xgem_h);
+	p += sizeof(struct rte_pon_ethernet_h);
+	p += sizeof(struct rte_vlan_hdr);
+	p += sizeof(struct rte_ipv4_hdr);
+	p += sizeof(struct rte_udp_hdr);
+	p += sizeof(struct rte_timestamp_h);
+
+	// RTE_PTR_ALIGN_CEIL(p, sizeof(uint64_t));
+
+	hlend = (hlend_t *)p;
+	return hlend;
+}
+
+static void
+l2fwd_check_dbrus(struct rte_mbuf *m, unsigned portid) 
+{
+	unsigned dst_port;
+	dbru_t *dbru;
+	dbru = l2fwd_dbru_pointer(m);
+
+	dst_port = l2fwd_dst_ports[portid];
+
+	if (dbru->buff_occ == 0x555555 && dbru->crc == 0x55) {
+		/* initialize the main clock at the first DBRU*/
+		if (port_statistics[dst_port].dbru == 0) {
+			pon_packet.dbru_tsc_sync = rte_rdtsc();
+		}
+		port_statistics[dst_port].dbru += 1;
+	}
+
+}
+
+
+static void
+l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid) 
+{
+	unsigned dst_port;
+	uint16_t i;
+	hlend_t *hlend;
+	// struct rte_pon_hlend_h *hlend;
+	struct rte_pon_bwmap_h **bwmap;
+	uint32_t previous_start, previous_grant;
+
+	dst_port = l2fwd_dst_ports[portid];
+	hlend = l2fwd_hlend_pointer(m);
+
+	hlend->bwmap_length = BWMAP_COUNT;
+	hlend->ploam_count = 0;
+	hlend->hec = 0;
+
+	previous_start = 0;
+	previous_grant = 0;
+	memset(&bwmap, 0, sizeof(bwmap));
+
+	for (i=0; i < BWMAP_COUNT; i++) {
+		bwmap[i]->alloc_id = i+1;
+		bwmap[i]->start_time = previous_start + previous_grant + 100;
+		bwmap[i]->grant_size = previous_grant + 256;
+		previous_start = bwmap[i]->start_time;
+		previous_grant = bwmap[i]->grant_size;
+	}
+	port_statistics[dst_port].bwmap += 1;
+
+}
+
 static void
 l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 {
 	unsigned dst_port;
 	int sent;
 	struct rte_eth_dev_tx_buffer *buffer;
+	uint64_t diff_tsc;
+	const uint64_t tx_pon_dbru_cycle = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * 125;
 
 	dst_port = l2fwd_dst_ports[portid];
 
 	if (mac_updating)
 		l2fwd_mac_updating(m, dst_port);
+
+	/* check DBRUs on upstream */
+	l2fwd_check_dbrus(m, dst_port);
+
+	diff_tsc = rte_rdtsc() - pon_packet.dbru_tsc_sync;
+	/* insert a DBRu every ~125µs (155,520 bytes = 38,880 words =~ 17.28 pkts (9000 mtu)) */
+	if (unlikely(diff_tsc > tx_pon_dbru_cycle)) {
+		l2fwd_create_bwmap(m, dst_port);
+		pon_packet.dbru_tsc_sync = rte_rdtsc();
+	}
 
 	buffer = tx_buffer[dst_port];
 	sent = rte_eth_tx_buffer(dst_port, 0, buffer, m);

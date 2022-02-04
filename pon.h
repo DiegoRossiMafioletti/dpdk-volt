@@ -10,6 +10,28 @@
 
 #define RTE_PON_PTKSIZE_NORM(_size) (_size+14)     // adds 14 bytes to the packet size
 
+typedef struct {
+    uint32_t buff_occ:24;
+    uint8_t crc;
+} dbru_t;
+
+typedef struct pon_packet_s {
+    uint64_t dbru_tsc_sync;
+    uint64_t curr_tsc;
+    uint64_t prev_tsc;
+} pon_packet_t;
+
+typedef struct {
+	uint64_t timestamp;
+	uint16_t magic;
+} tstamp_t;
+
+typedef struct {
+    uint16_t bwmap_length:11;
+    uint8_t ploam_count;
+    uint16_t hec:13;            
+} hlend_t;
+
 struct rte_pon_us_ether_hdr {
     // outer ethernet: integrated with the standard Ethernet header
     // uint64_t out_dstAddr:48;
@@ -95,4 +117,10 @@ struct rte_pon_ethernet_h {
     uint64_t srcaddr:48;
     uint32_t vlan_tag;
     uint16_t ether_type;
+} __rte_packed;
+
+
+struct rte_timestamp_h {
+	uint64_t timestamp;
+	uint16_t magic;
 } __rte_packed;
