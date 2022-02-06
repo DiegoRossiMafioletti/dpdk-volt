@@ -288,11 +288,11 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	/* initializes the bwmap array */
 	memset(&bwmap, 0, sizeof(bwmap));
 	for (i=0; i < BWMAP_COUNT; i++) {
-		bwmap[i]->alloc_id = i+1;
-		bwmap[i]->start_time = previous_start + previous_grant + 100;
-		bwmap[i]->grant_size = previous_grant + 256;
-		previous_start = bwmap[i]->start_time;
-		previous_grant = bwmap[i]->grant_size;
+		bwmap[i].alloc_id = i+1;
+		bwmap[i].start_time = previous_start + previous_grant + 100;
+		bwmap[i].grant_size = previous_grant + 256;
+		previous_start = bwmap[i].start_time;
+		previous_grant = bwmap[i].grant_size;
 	}
 
 	port_statistics[dst_port].bwmap += 1;
