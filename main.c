@@ -273,11 +273,14 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	uint16_t i;
 	hlend_t *hlend;
 	// struct rte_pon_hlend_h *hlend;
-	struct rte_pon_bwmap_h bwmap[BWMAP_COUNT];
+	// struct rte_pon_bwmap_h bwmap[BWMAP_COUNT];
 	uint32_t previous_start, previous_grant;
 
 	dst_port = l2fwd_dst_ports[portid];
 	hlend = l2fwd_hlend_pointer(m);
+
+	/* pointer to the first grant */
+	struct rte_pon_bwmap_h *bwmap = (struct rte_pon_bwmap_h *)&hlend;
 
 	hlend->bwmap_length = BWMAP_COUNT;
 	hlend->ploam_count = 0;
@@ -306,7 +309,7 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 	int sent;
 	struct rte_eth_dev_tx_buffer *buffer;
 	uint64_t diff_tsc;
-	const uint64_t tx_pon_dbru_cycle = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * 125;
+	const uint64_t pon_bwmap_cycle = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * 125;
 
 	dst_port = l2fwd_dst_ports[portid];
 
@@ -318,7 +321,7 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 
 	diff_tsc = rte_rdtsc() - pon_packet.dbru_tsc_sync;
 	/* insert a DBRu every ~125µs (155,520 bytes = 38,880 words =~ 17.28 pkts (9000 mtu)) */
-	if (unlikely(diff_tsc > tx_pon_dbru_cycle)) {
+	if (unlikely(diff_tsc > pon_bwmap_cycle)) {
 		l2fwd_create_bwmap(m, dst_port);
 		pon_packet.dbru_tsc_sync = rte_rdtsc();
 	}
