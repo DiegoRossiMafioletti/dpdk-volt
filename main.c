@@ -127,8 +127,6 @@ struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 /* A tsc-based timer responsible for triggering statistics printout */
 static uint64_t timer_period = 10; /* default period is 10 seconds */
 
-#define BWMAP_COUNT 9
-
 /* Print out statistics on packets dropped */
 static void
 print_stats(void)
@@ -272,31 +270,24 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	unsigned dst_port;
 	uint16_t i;
 	hlend_t *hlend;
-	// struct rte_pon_hlend_h *hlend;
-	// struct rte_pon_bwmap_h *bwmap;
 	uint32_t previous_start, previous_grant;
 
 	dst_port = l2fwd_dst_ports[portid];
 	/* pointer to hlend header */
 	hlend = l2fwd_hlend_pointer(m);
 
-	hlend->bwmap_length = BWMAP_COUNT;
+	hlend->bwmap_length = BWMAP_ALLOC_STRUCT_COUNT;
 	hlend->ploam_count = 0;
 	hlend->hec = 0;
 
 	previous_start = 0;
 	previous_grant = 0;
-	/* pointer to the first grant */
-	struct rte_pon_bwmap_h *bwmap = (struct rte_pon_bwmap_h *) hlend;
-	// /* initializes the bwmap array */
-	// memset(&bwmap, 0, sizeof(bwmap));
-	for (i=0; i < BWMAP_COUNT; i++) {
-		bwmap->alloc_id = i+1;
-		bwmap->start_time = previous_start + previous_grant + 100;
-		bwmap->grant_size = previous_grant + 256;
-		previous_start = bwmap->start_time;
-		previous_grant = bwmap->grant_size;
-		bwmap++;
+	for (i=0; i < BWMAP_ALLOC_STRUCT_COUNT; i++) {
+		hlend->alloc_struct[i].alloc_id = i+1;
+		hlend->alloc_struct[i].start_time = previous_start + previous_grant + 100;
+		hlend->alloc_struct[i].grant_size = previous_grant + 256;
+		previous_start = hlend->alloc_struct[i].start_time;
+		previous_grant = hlend->alloc_struct[i].grant_size;
 	}
 
 	port_statistics[dst_port].bwmap += 1;

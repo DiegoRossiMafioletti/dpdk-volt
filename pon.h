@@ -10,6 +10,8 @@
 
 #define RTE_PON_PTKSIZE_NORM(_size) (_size+14)     // adds 14 bytes to the packet size
 
+#define BWMAP_ALLOC_STRUCT_COUNT 8
+
 typedef struct {
     uint32_t buff_occ:24;
     uint8_t crc;
@@ -26,11 +28,6 @@ typedef struct {
 	uint16_t magic;
 } tstamp_t;
 
-typedef struct {
-    uint16_t bwmap_length:11;
-    uint8_t ploam_count;
-    uint16_t hec:13;            
-} hlend_t;
 
 struct rte_pon_us_ether_hdr {
     // outer ethernet: integrated with the standard Ethernet header
@@ -82,7 +79,7 @@ struct rte_pon_hlend_h {
 } __rte_packed;
 
 
-struct rte_pon_bwmap_h {
+struct rte_pon_bwmap_alloc_structure_h {
     uint16_t alloc_id:14;       // The allocation ID field contains the 14-bit number that indicates the recipient of the bandwidth allocation
     uint8_t dbru:1;             /* If this bit is set, the ONU should send the DBRu report for the given Alloc-ID. 
                                     If the bit is not set, the DBRu report is not transmitted.
@@ -124,3 +121,11 @@ struct rte_timestamp_h {
 	uint64_t timestamp;
 	uint16_t magic;
 } __rte_packed;
+
+
+typedef struct {
+    uint16_t bwmap_length:11;
+    uint8_t ploam_count;
+    uint16_t hec:13;
+    struct rte_pon_bwmap_alloc_structure_h alloc_struct[BWMAP_ALLOC_STRUCT_COUNT];
+} hlend_t;
