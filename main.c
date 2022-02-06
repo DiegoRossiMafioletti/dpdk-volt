@@ -273,7 +273,7 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	uint16_t i;
 	hlend_t *hlend;
 	// struct rte_pon_hlend_h *hlend;
-	struct rte_pon_bwmap_h *bwmap[BWMAP_COUNT];
+	struct rte_pon_bwmap_h bwmap[BWMAP_COUNT];
 	uint32_t previous_start, previous_grant;
 
 	dst_port = l2fwd_dst_ports[portid];
