@@ -273,14 +273,12 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	uint16_t i;
 	hlend_t *hlend;
 	// struct rte_pon_hlend_h *hlend;
-	// struct rte_pon_bwmap_h bwmap[BWMAP_COUNT];
+	// struct rte_pon_bwmap_h *bwmap;
 	uint32_t previous_start, previous_grant;
 
 	dst_port = l2fwd_dst_ports[portid];
+	/* pointer to hlend header */
 	hlend = l2fwd_hlend_pointer(m);
-
-	/* pointer to the first grant */
-	struct rte_pon_bwmap_h *bwmap = (struct rte_pon_bwmap_h *)&hlend;
 
 	hlend->bwmap_length = BWMAP_COUNT;
 	hlend->ploam_count = 0;
@@ -288,14 +286,17 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 
 	previous_start = 0;
 	previous_grant = 0;
-	/* initializes the bwmap array */
-	memset(&bwmap, 0, sizeof(bwmap));
+	/* pointer to the first grant */
+	struct rte_pon_bwmap_h *bwmap = (struct rte_pon_bwmap_h *) hlend;
+	// /* initializes the bwmap array */
+	// memset(&bwmap, 0, sizeof(bwmap));
 	for (i=0; i < BWMAP_COUNT; i++) {
-		bwmap[i].alloc_id = i+1;
-		bwmap[i].start_time = previous_start + previous_grant + 100;
-		bwmap[i].grant_size = previous_grant + 256;
-		previous_start = bwmap[i].start_time;
-		previous_grant = bwmap[i].grant_size;
+		bwmap->alloc_id = i+1;
+		bwmap->start_time = previous_start + previous_grant + 100;
+		bwmap->grant_size = previous_grant + 256;
+		previous_start = bwmap->start_time;
+		previous_grant = bwmap->grant_size;
+		bwmap++;
 	}
 
 	port_statistics[dst_port].bwmap += 1;
