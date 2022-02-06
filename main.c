@@ -157,8 +157,8 @@ print_stats(void)
 		printf("\nStatistics for port %u ------------------------------"
 			   "\nPackets sent: %24"PRIu64
 			   "\nPackets received: %20"PRIu64
-			   "\nDBRUs: %32"PRIu64
-			   "\nBWMAPs: %31"PRIu64
+			   "\nDBRUs: %31"PRIu64
+			   "\nBWMAPs: %30"PRIu64
 			   "\nPackets dropped: %21"PRIu64,
 			   portid,
 			   port_statistics[portid].tx,
@@ -273,7 +273,7 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	uint16_t i;
 	hlend_t *hlend;
 	// struct rte_pon_hlend_h *hlend;
-	struct rte_pon_bwmap_h **bwmap;
+	struct rte_pon_bwmap_h *bwmap[BWMAP_COUNT];
 	uint32_t previous_start, previous_grant;
 
 	dst_port = l2fwd_dst_ports[portid];
@@ -285,8 +285,8 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 
 	previous_start = 0;
 	previous_grant = 0;
+	/* initializes the bwmap array */
 	memset(&bwmap, 0, sizeof(bwmap));
-/*
 	for (i=0; i < BWMAP_COUNT; i++) {
 		bwmap[i]->alloc_id = i+1;
 		bwmap[i]->start_time = previous_start + previous_grant + 100;
@@ -294,7 +294,7 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 		previous_start = bwmap[i]->start_time;
 		previous_grant = bwmap[i]->grant_size;
 	}
-*/
+
 	port_statistics[dst_port].bwmap += 1;
 
 }
