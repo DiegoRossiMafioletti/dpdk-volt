@@ -275,11 +275,11 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	/* change ETH_TYPE to BWMAP type */
 	struct rte_ether_hdr *eth;
 	eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
-	eth->ether_type = RTE_ETHER_TYPE_PON_BWMAP;
+	eth->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_PON_BWMAP);
 
 	/* pointer to hlend header */
 	hlend = l2fwd_hlend_pointer(m);
-	hlend->bwmap_length = BWMAP_ALLOC_STRUCT_COUNT;
+	hlend->bwmap_length = rte_cpu_to_be_16(BWMAP_ALLOC_STRUCT_COUNT);
 	hlend->ploam_count = 0;
 	hlend->hec = 0;
 
@@ -287,11 +287,11 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	previous_start = 0;
 	previous_grant = 0;
 	for (i=0; i < BWMAP_ALLOC_STRUCT_COUNT; i++) {
-		hlend->alloc_struct[i].alloc_id = i+1;
-		hlend->alloc_struct[i].start_time = previous_start + previous_grant + 100;
-		hlend->alloc_struct[i].grant_size = previous_grant + 256;
-		previous_start = hlend->alloc_struct[i].start_time;
-		previous_grant = hlend->alloc_struct[i].grant_size;
+		hlend->alloc_struct[i].alloc_id = rte_cpu_to_be_16(i+1);
+		hlend->alloc_struct[i].start_time = rte_cpu_to_be_16(previous_start + previous_grant + 100);
+		hlend->alloc_struct[i].grant_size = rte_cpu_to_be_16(previous_grant + 256);
+		previous_start = rte_be_to_cpu_16(hlend->alloc_struct[i].start_time);
+		previous_grant = rte_be_to_cpu_16(hlend->alloc_struct[i].grant_size);
 	}
 
 	dst_port = l2fwd_dst_ports[portid];
