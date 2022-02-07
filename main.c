@@ -272,14 +272,18 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	hlend_t *hlend;
 	uint32_t previous_start, previous_grant;
 
-	dst_port = l2fwd_dst_ports[portid];
+	/* change ETH_TYPE to BWMAP type */
+	struct rte_ether_hdr *eth;
+	eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+	eth->ether_type = RTE_ETHER_TYPE_PON_BWMAP;
+
 	/* pointer to hlend header */
 	hlend = l2fwd_hlend_pointer(m);
-
 	hlend->bwmap_length = BWMAP_ALLOC_STRUCT_COUNT;
 	hlend->ploam_count = 0;
 	hlend->hec = 0;
 
+	/* bwmap constructor */
 	previous_start = 0;
 	previous_grant = 0;
 	for (i=0; i < BWMAP_ALLOC_STRUCT_COUNT; i++) {
@@ -290,8 +294,8 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 		previous_grant = hlend->alloc_struct[i].grant_size;
 	}
 
+	dst_port = l2fwd_dst_ports[portid];
 	port_statistics[dst_port].bwmap += 1;
-
 }
 
 static void

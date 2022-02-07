@@ -7,6 +7,7 @@
 
 #define RTE_ETHER_TYPE_PON_US_FIRST     0x1f44
 #define RTE_ETHER_TYPE_PON_US_LAST      0x1b94
+#define RTE_ETHER_TYPE_PON_BWMAP        0x5678
 
 #define RTE_PON_PTKSIZE_NORM(_size) (_size+14)     // adds 14 bytes to the packet size
 
