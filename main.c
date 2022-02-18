@@ -146,7 +146,7 @@ print_stats(void)
 		/* Clear screen and move to top left */
 	printf("%s%s", clr, topLeft);
 
-	printf("\nPort statistics ====================================");
+	printf("\nvOLT port statistics ================================");
 
 	for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++) {
 		/* skip disabled ports */
@@ -171,7 +171,7 @@ print_stats(void)
 		total_dbru += port_statistics[portid].dbru;
 		total_bwmap += port_statistics[portid].bwmap;
 	}
-	printf("\nAggregate statistics ==============================="
+	printf("\nvOLT aggregate statistics ==========================="
 		   "\nTotal packets sent: %18"PRIu64
 		   "\nTotal packets received: %14"PRIu64
 		   "\nTotal DBRUs: %25"PRIu64
