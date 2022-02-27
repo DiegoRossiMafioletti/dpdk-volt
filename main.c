@@ -44,6 +44,8 @@
 
 static volatile bool force_quit;
 
+vdba_t vdba;
+
 /* MAC updating disabled by default */
 static int mac_updating = 0;
 
@@ -155,7 +157,7 @@ print_stats(void)
 		printf("\nStatistics for port %u ------------------------------"
 			   "\nPackets sent: %24"PRIu64
 			   "\nPackets received: %20"PRIu64
-			   "\nDBRUs: %31"PRIu64
+			   "\nDBRus: %31"PRIu64
 			   "\nBWMAPs: %30"PRIu64
 			   "\nPackets dropped: %21"PRIu64,
 			   portid,
@@ -174,7 +176,7 @@ print_stats(void)
 	printf("\nvOLT aggregate statistics ==========================="
 		   "\nTotal packets sent: %18"PRIu64
 		   "\nTotal packets received: %14"PRIu64
-		   "\nTotal DBRUs: %25"PRIu64
+		   "\nTotal DBRus: %25"PRIu64
 		   "\nTotal BWMAPs: %24"PRIu64
 		   "\nTotal packets dropped: %15"PRIu64,
 		   total_packets_tx,
@@ -183,6 +185,27 @@ print_stats(void)
 		   total_bwmap,
 		   total_packets_dropped);
 	printf("\n====================================================\n");
+
+	printf("Press [ + or - ] to change complexity (%d).\n", vdba.complexity);
+
+	// TODO: create a thread to check these keys
+	// char c;
+	// uint16_t rc;
+
+	// rc = read(0, &c, 1);
+	// if (rc > 0) {
+	// 	switch (c) {
+	// 		case '+': 
+	// 				vdba.complexity++;
+	// 				break;
+	// 		case '-': 
+	// 				vdba.complexity--;
+	// 				break;
+	// 	}
+	// }
+
+
+
 
 	fflush(stdout);
 }
@@ -234,7 +257,7 @@ l2fwd_hlend_pointer(struct rte_mbuf *m)
 	p += sizeof(struct rte_pon_xgem_h);
 	p += sizeof(struct rte_pon_ethernet_h);
 	p += sizeof(struct rte_vlan_hdr);
-	p += sizeof(struct rte_ipv4_hdr);
+	p += sizeof(struct rte_ipv4_hdr);	// hw ts is here!
 	p += sizeof(struct rte_udp_hdr);
 	p += sizeof(struct rte_timestamp_h);
 
@@ -253,9 +276,9 @@ l2fwd_check_dbrus(struct rte_mbuf *m, unsigned portid)
 
 	dst_port = l2fwd_dst_ports[portid];
 
-	if (dbru->buff_occ == 0x555555 && dbru->crc == 0x55) {
+	if (dbru->crc == 0x55) {
 		/* initialize the main clock at the first DBRU*/
-		if (port_statistics[dst_port].dbru == 0) {
+		if (dbru->buff_occ == 0 && port_statistics[dst_port].dbru == 0) {
 			pon_packet.dbru_tsc_sync = rte_rdtsc();
 		}
 		port_statistics[dst_port].dbru += 1;
@@ -268,14 +291,17 @@ static void
 l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid) 
 {
 	unsigned dst_port;
-	uint16_t i;
+	uint16_t i, j, start;
 	hlend_t *hlend;
-	uint32_t previous_start, previous_grant;
+	uint32_t previous_start, previous_grant, alloc_id;
 
 	/* change ETH_TYPE to BWMAP type */
 	struct rte_ether_hdr *eth;
 	eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 	eth->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_PON_BWMAP);
+
+	/* calculation */
+	rte_delay_us_block(vdba.complexity);
 
 	/* pointer to hlend header */
 	hlend = l2fwd_hlend_pointer(m);
@@ -284,14 +310,19 @@ l2fwd_create_bwmap(struct rte_mbuf *m, unsigned portid)
 	hlend->hec = 0;
 
 	/* bwmap constructor */
-	previous_start = 0;
-	previous_grant = 0;
-	for (i=0; i < BWMAP_ALLOC_STRUCT_COUNT; i++) {
-		hlend->alloc_struct[i].alloc_id = rte_cpu_to_be_16(i+1);
-		hlend->alloc_struct[i].start_time = rte_cpu_to_be_16(previous_start + previous_grant + 100);
-		hlend->alloc_struct[i].grant_size = rte_cpu_to_be_16(previous_grant + 256);
-		previous_start = rte_be_to_cpu_16(hlend->alloc_struct[i].start_time);
-		previous_grant = rte_be_to_cpu_16(hlend->alloc_struct[i].grant_size);
+	start=0;
+	for (j=1; j<3; j++) {
+		previous_start = 0;
+		previous_grant = 0;
+		alloc_id = 0;
+		for (i=start; i < (BWMAP_ALLOC_STRUCT_COUNT*j); i++) {
+			hlend->alloc_struct[i].alloc_id = rte_cpu_to_be_16(alloc_id++);
+			hlend->alloc_struct[i].start_time = rte_cpu_to_be_16(previous_start + previous_grant + 100);
+			hlend->alloc_struct[i].grant_size = rte_cpu_to_be_16(previous_grant + 256);
+			previous_start = rte_be_to_cpu_16(hlend->alloc_struct[i].start_time);
+			previous_grant = rte_be_to_cpu_16(hlend->alloc_struct[i].grant_size);
+		}
+		start=BWMAP_ALLOC_STRUCT_COUNT;
 	}
 
 	dst_port = l2fwd_dst_ports[portid];
@@ -367,7 +398,6 @@ l2fwd_main_loop(void)
 	while (!force_quit) {
 
 		cur_tsc = rte_rdtsc();
-
 		/*
 		 * TX burst queue drain
 		 */
@@ -778,6 +808,8 @@ main(int argc, char **argv)
 	unsigned nb_ports_in_mask = 0;
 	unsigned int nb_lcores = 0;
 	unsigned int nb_mbufs;
+
+	vdba.complexity = 130;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);

@@ -11,7 +11,9 @@
 
 #define RTE_PON_PTKSIZE_NORM(_size) (_size+14)     // adds 14 bytes to the packet size
 
-#define BWMAP_ALLOC_STRUCT_COUNT 128
+#define BWMAP_ALLOC_STRUCT_COUNT 8
+
+#define CLONE_BWMAP 1
 
 typedef struct {
     uint32_t buff_occ:24;
@@ -123,6 +125,10 @@ struct rte_timestamp_h {
 	uint16_t magic;
 } __rte_packed;
 
+
+typedef struct {
+    uint16_t complexity;
+} vdba_t;
 
 typedef struct {
     uint16_t bwmap_length:11;
