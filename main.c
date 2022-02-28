@@ -17,6 +17,8 @@
 #include <getopt.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <fcntl.h>
+#include <linux/input.h>
 
 #include <rte_common.h>
 #include <rte_log.h>
@@ -39,6 +41,11 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 #include <rte_string_fns.h>
+
+#include <cmdline_rdline.h>
+#include <cmdline_parse.h>
+#include <cmdline_socket.h>
+#include <cmdline.h>
 
 #include "pon.h"
 
@@ -115,6 +122,8 @@ struct rte_mempool * l2fwd_pktmbuf_pool = NULL;
 /* global pon_packet structure */
 pon_packet_t pon_packet;
 
+int fd;
+
 /* Per-port statistics struct */
 struct l2fwd_port_statistics {
 	uint64_t tx;
@@ -187,25 +196,6 @@ print_stats(void)
 	printf("\n====================================================\n");
 
 	printf("Press [ + or - ] to change complexity (%d).\n", vdba.complexity);
-
-	// TODO: create a thread to check these keys
-	// char c;
-	// uint16_t rc;
-
-	// rc = read(0, &c, 1);
-	// if (rc > 0) {
-	// 	switch (c) {
-	// 		case '+': 
-	// 				vdba.complexity++;
-	// 				break;
-	// 		case '-': 
-	// 				vdba.complexity--;
-	// 				break;
-	// 	}
-	// }
-
-
-
 
 	fflush(stdout);
 }
@@ -796,6 +786,52 @@ signal_handler(int signum)
 	}
 }
 
+static int 
+kbhit(void) 
+{
+    static bool initflag = false;
+    static const int STDIN = 0;
+
+    if (!initflag) {
+        // Use termios to turn off line buffering
+        struct termios term;
+        tcgetattr(STDIN, &term);
+        term.c_lflag &= ~ICANON;
+        tcsetattr(STDIN, TCSANOW, &term);
+        setbuf(stdin, NULL);
+        initflag = true;
+    }
+
+    int nbbytes;
+    ioctl(STDIN, FIONREAD, &nbbytes);  // 0 is STDIN
+    return nbbytes;
+}
+
+
+static void *
+threadComplexity(__rte_unused void *dummy)
+{
+	char ch;
+	while (!force_quit) {
+		while (!kbhit()) {
+			sleep(1);
+		}
+		ch = getchar();
+		switch (ch) {
+			case '+': 
+					vdba.complexity+=10;
+
+					break;
+			case '-': 
+					if (vdba.complexity > 10)
+						vdba.complexity-=10;
+
+					break;
+		}
+	}
+	return NULL;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -808,8 +844,13 @@ main(int argc, char **argv)
 	unsigned nb_ports_in_mask = 0;
 	unsigned int nb_lcores = 0;
 	unsigned int nb_mbufs;
+	pthread_t threadId;
 
 	vdba.complexity = 130;
+
+	int err = pthread_create(&threadId, NULL, &threadComplexity, NULL);
+	if (err)
+        rte_exit(EXIT_FAILURE, "Thread creation failed\n");
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -825,7 +866,7 @@ main(int argc, char **argv)
 	/* parse application arguments (after the EAL ones) */
 	ret = l2fwd_parse_args(argc, argv);
 	if (ret < 0)
-		rte_exit(EXIT_FAILURE, "Invalid L2FWD arguments\n");
+		rte_exit(EXIT_FAILURE, "Invalid vOLT arguments\n");
 
 	printf("MAC updating %s\n", mac_updating ? "enabled" : "disabled");
 
